@@ -1,0 +1,28 @@
+import os
+
+# 關鍵字列表（順序不影響）
+keywords = [
+    "compass", "coral", "crystal", "diamond", "emerald",
+    "fossil", "key", "letter", "PR_curve", "shell",
+    "treasure_box", "coin"
+]
+
+# 資料夾路徑
+folder_path = r"C:\Users\acer\Desktop\新增資料夾\kibo_data_blur\kibo_data_blur\test\classes_count"
+
+# 處理所有 txt 檔案
+for filename in os.listdir(folder_path):
+    if filename.endswith(".txt"):
+        matched = None
+        for keyword in keywords:
+            if keyword.lower() in filename.lower():
+                matched = keyword
+                break
+        
+        if matched:
+            new_content = f"{matched} 1\n"
+        else:
+            new_content = ""
+
+        with open(os.path.join(folder_path, filename), "w") as f:
+            f.write(new_content)
