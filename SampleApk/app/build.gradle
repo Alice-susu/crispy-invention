@@ -1,0 +1,84 @@
+apply plugin: 'com.android.application'
+
+android {
+    // 保持不變，因為您堅持 Java 7 兼容性
+    compileSdkVersion 26
+    buildToolsVersion "28.0.3" // 保持不變，與 compileSdkVersion 匹配
+
+    defaultConfig {
+        applicationId "jp.jaxa.iss.kibo.rpc.sampleapk" // 移除不必要的空字串拼接
+        minSdkVersion 26
+        targetSdkVersion 26 // 保持不變
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        multiDexEnabled true // 保持 true
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64' // 保持不變
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    packagingOptions {
+        exclude 'META-INF/DEPENDENCIES.txt'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/notice.txt'
+        exclude 'META-INF/license.txt'
+        exclude 'META-INF/dependencies.txt'
+        exclude 'META-INF/LGPL2.1'
+    }
+
+    // --- 開始：Java 編譯選項用於棄用警告 ---
+    // 添加此配置以在編譯時顯示詳細的 Java 棄用警告
+    // 這樣下次編譯時，如果還有 Java 棄用警告，會顯示具體的行號和方法
+    tasks.withType(JavaCompile) {
+        options.compilerArgs << "-Xlint:deprecation"
+    }
+    // --- 結束：Java 編譯選項 ---
+}
+
+dependencies {
+    // 'implementation' 是推薦的依賴配置，它只對當前模組可見，提高編譯速度
+    implementation project(':guest_science_library')
+    implementation project(':kibo_rpc_api')
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+
+    // 注意：com.android.support 庫已棄用，但在 compileSdkVersion 26 下仍然是必要的
+    // 如果您將來升級 compileSdkVersion，則應遷移到 AndroidX
+    implementation 'com.android.support:appcompat-v7:26.1.0' // 建議使用確切版本，例如 26.1.0 而不是 26.+
+    implementation 'com.android.support.constraint:constraint-layout:1.0.2'
+
+    // 對於 Rosjava 依賴，使用 `implementation` 並且指定精確版本範圍以避免不確定性
+    // 您的原始配置 [0.2,0.3) 在較新的 Gradle 中會產生棄用警告。
+    // 假設您想要 0.2.0 或更新的 0.2.x 版本，這裡使用 0.2.0。
+    // 如果您需要其他特定的 Rosjava 版本，請替換此處。
+    implementation('org.ros.rosjava_core:rosjava:0.2.0') {
+        exclude group: 'xml-apis'
+        exclude group: 'junit'
+    }
+    implementation('org.ros.android_core:android_10:0.2.0') {
+        exclude group: 'xml-apis'
+        exclude group: 'junit'
+    }
+
+    // OpenCV 依賴
+    implementation 'com.quickbirdstudios:opencv-contrib:4.5.3.0'
+
+    // ONNX Runtime 依賴項
+    // 重要：請檢查 https://github.com/microsoft/onnxruntime/releases 獲取最新的穩定版本
+    // 這裡使用 1.17.1 作為示例
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.17.1'
+
+    // 確保 MultiDex 依賴也存在
+    implementation 'com.android.support:multidex:1.0.3'
+}
