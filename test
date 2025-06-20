@@ -30,6 +30,7 @@ public class YourService extends KiboRpcService {
     private Set<String> foundTreasures = new HashSet<>();
     private Set<String> foundLandmarks = new HashSet<>();  // Add this line
     private Map<String, Map<String, Integer>> areaLandmarks = new HashMap<>();
+    private final Point[] reportPoints = new Point[4];
 
 
     // Area coordinates and orientations for all 4 areas
@@ -48,7 +49,7 @@ public class YourService extends KiboRpcService {
     };
 
     @Override
-    protected void runPlan1(){
+    protected void runPlan1() {
         // Log the start of the mission.
         Log.i(TAG, "Start mission");
 
@@ -64,42 +65,59 @@ public class YourService extends KiboRpcService {
         // ========================================================================
         // CONFIGURABLE IMAGE PROCESSING PARAMETERS - EDIT HERE
         // ========================================================================
-
         Size cropWarpSize = new Size(640, 480);   // Size for cropped/warped image
         Size resizeSize = new Size(320, 320);     // Size for final processing
 
         // ========================================================================
         // PROCESS ALL 4 AREAS
         // ========================================================================
-
-        // Loop through all 4 areas
         for (int areaIndex = 0; areaIndex < 4; areaIndex++) {
             int areaId = areaIndex + 1; // Area IDs are 1, 2, 3, 4
-
             Log.i(TAG, "=== Processing Area " + areaId + " ===");
 
-            // Move to the area
             Point targetPoint = AREA_POINTS[areaIndex];
             Quaternion targetQuaternion = AREA_QUATERNIONS[areaIndex];
+            Point currentAreaPoint = targetPoint;
 
             api.moveTo(targetPoint, targetQuaternion, false);
 
-            // Get a camera image
+            // Use the existing image variable without redeclaring
             Mat image = api.getMatNavCam();
-
-            // Process the image for this area
             Object[] processedResult = imageEnhanceAndCrop(image, cropWarpSize, resizeSize, areaId);
-            Mat claHeBinImage = (processedResult != null) ? (Mat) processedResult[0] : null;
 
+            Mat claHeBinImage = null;
+            Mat tvec = null;
 
-            // Initialize detection results for this area
+            if (processedResult != null) {
+                claHeBinImage = (Mat) processedResult[0];
+                tvec = (Mat) processedResult[1];
+            }
+
+            if (tvec != null && tvec.rows() >= 3) {
+                double dx = tvec.get(0, 0)[0];
+                double dy = tvec.get(1, 0)[0];
+                double dz = tvec.get(2, 0)[0];
+
+                Point refinedPoint = new Point(
+                        currentAreaPoint.getX() + dx,
+                        currentAreaPoint.getY() + dy,
+                        currentAreaPoint.getZ() + dz
+                );
+
+                Log.i(TAG, String.format("Area %d: Refined point from AR Tag: (%.3f, %.3f, %.3f)", areaId,
+                        refinedPoint.getX(), refinedPoint.getY(), refinedPoint.getZ()));
+
+                reportPoints[areaId - 1] = refinedPoint;
+            } else {
+                reportPoints[areaId - 1] = currentAreaPoint;
+            }
+
             Map<String, Integer> landmark_items = new HashMap<>();
             Set<String> treasure_types = new HashSet<>();
 
             if (claHeBinImage != null) {
                 Log.i(TAG, "Area " + areaId + ": Image enhancement and cropping successful");
 
-                // Detect items using YOLO
                 Object[] detected_items = detectitemfromcvimg(
                         claHeBinImage,
                         0.5f,      // conf_threshold
@@ -109,54 +127,36 @@ public class YourService extends KiboRpcService {
                         320        // img_size
                 );
 
-                // Extract results
                 landmark_items = (Map<String, Integer>) detected_items[0];
                 treasure_types = (Set<String>) detected_items[1];
 
                 Log.i(TAG, "Area " + areaId + " - Landmark quantities: " + landmark_items);
                 Log.i(TAG, "Area " + areaId + " - Treasure types: " + treasure_types);
 
-                // Store results for later use
                 areaLandmarks.put("area" + areaId, landmark_items);
                 foundTreasures.addAll(treasure_types);
-
-                // Add this line to store landmark types
                 foundLandmarks.addAll(landmark_items.keySet());
-
-                // Store treasure types for this area
                 areaTreasure.get(areaId).addAll(treasure_types);
 
                 Log.i(TAG, "Area " + areaId + " treasure types: " + areaTreasure.get(areaId));
-
-                // Clean up the processed image
                 claHeBinImage.release();
             } else {
                 Log.w(TAG, "Area " + areaId + ": Image enhancement failed - no markers detected or processing error");
             }
 
-            // Clean up original image
             image.release();
 
-            // ========================================================================
-            // SET AREA INFO FOR THIS AREA
-            // ========================================================================
-
-            // Use the detected landmark items for area info
             String[] firstLandmark = getFirstLandmarkItem(landmark_items);
             if (firstLandmark != null) {
                 String currentlandmark_items = firstLandmark[0];
                 int landmarkCount = Integer.parseInt(firstLandmark[1]);
-
-                // Set the area info with detected landmarks
                 api.setAreaInfo(areaId, currentlandmark_items, landmarkCount);
                 Log.i(TAG, String.format("Area %d: %s x %d", areaId, currentlandmark_items, landmarkCount));
             } else {
                 Log.w(TAG, "Area " + areaId + ": No landmark items detected");
-                // Set default if no detection
                 api.setAreaInfo(areaId, "unknown", 0);
             }
 
-            // Short delay between areas to ensure stability
             try {
                 Thread.sleep(500);
             } catch (InterruptedException e) {
@@ -164,23 +164,14 @@ public class YourService extends KiboRpcService {
             }
         }
 
-        // ========================================================================
-        // LOG SUMMARY OF ALL AREAS
-        // ========================================================================
-
         Log.i(TAG, "=== AREA PROCESSING SUMMARY ===");
         for (int i = 1; i <= 4; i++) {
             Log.i(TAG, "Area " + i + " treasures: " + areaTreasure.get(i));
             Log.i(TAG, "Area " + i + " landmarks: " + areaLandmarks.get("area" + i));
         }
         Log.i(TAG, "All found treasures: " + foundTreasures);
-        Log.i(TAG, "All found landmarks: " + foundLandmarks);  // Add this line
+        Log.i(TAG, "All found landmarks: " + foundLandmarks);
 
-        // ========================================================================
-        // ASTRONAUT INTERACTION
-        // ========================================================================
-
-        // Move to the front of the astronaut and report rounding completion
         Point astronautPoint = new Point(11.143d, -6.7607d, 4.9654d);
         Quaternion astronautQuaternion = new Quaternion(0f, 0f, 0.707f, 0.707f);
 
@@ -188,20 +179,13 @@ public class YourService extends KiboRpcService {
         api.moveTo(astronautPoint, astronautQuaternion, false);
         api.reportRoundingCompletion();
 
-        // Error handling verify markers are visible before proceeding
         boolean astronautMarkersOk = waitForMarkersDetection(2000, 200, "astronaut");
-
         if (astronautMarkersOk) {
             Log.i(TAG, "Astronaut markers confirmed - proceeding with target detection");
         } else {
             Log.w(TAG, "Astronaut markers not detected - proceeding anyway");
         }
 
-        // ========================================================================
-        // TARGET ITEM RECOGNITION
-        // ========================================================================
-
-        // Get target item image from astronaut
         Mat targetImage = api.getMatNavCam();
         String targetTreasureType = processTargetImage(targetImage, resizeSize);
 
@@ -212,7 +196,7 @@ public class YourService extends KiboRpcService {
             if (targetAreaId > 0) {
                 Log.i(TAG, "Target treasure '" + targetTreasureType + "' found in Area " + targetAreaId);
                 api.notifyRecognitionItem();
-                Point targetAreaPoint = AREA_POINTS[targetAreaId - 1];
+                Point targetAreaPoint = reportPoints[targetAreaId - 1];
                 Quaternion targetAreaQuaternion = AREA_QUATERNIONS[targetAreaId - 1];
                 Log.i(TAG, "Moving back to Area " + targetAreaId + " to get the treasure");
                 api.moveTo(targetAreaPoint, targetAreaQuaternion, false);
@@ -230,17 +214,6 @@ public class YourService extends KiboRpcService {
         }
 
         targetImage.release();
-
-}
-
-    @Override
-    protected void runPlan2(){
-        // write your plan 2 here.
-    }
-
-    @Override
-    protected void runPlan3(){
-        // write your plan 3 here.
     }
 
     /**
