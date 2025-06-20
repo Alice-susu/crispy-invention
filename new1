@@ -1,4 +1,4 @@
-ackage jp.jaxa.iss.kibo.rpc.sampleapk;
+package jp.jaxa.iss.kibo.rpc.sampleapk;
 
 import jp.jaxa.iss.kibo.rpc.api.KiboRpcService;
 
